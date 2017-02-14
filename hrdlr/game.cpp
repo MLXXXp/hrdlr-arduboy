@@ -1,18 +1,19 @@
-#include <Arduboy.h>
-#include <lib/ArduboyExtra/simple_buttons.h>
+#include <Arduboy2.h>
+#include <ArduboyPlaytune.h>
 
-#include <Math.h>
-#include <bitmaps/banner.h>
-#include <bitmaps/coin.h>
-#include <bitmaps/hurdle.h>
-#include <bitmaps/player.h>
-#include <bitmaps/speaker.h>
+#include <math.h>
+#include "banner.h"
+#include "coin.h"
+#include "hurdle.h"
+#include "player.h"
+#include "speaker.h"
 
-#include <music.h>
+#include "music.h"
 
-Arduboy arduboy;
+#define FRAME_RATE 60
 
-SimpleButtons buttons (arduboy);
+Arduboy2 arduboy;
+ArduboyPlaytune tunes(arduboy.audio.enabled);
 
 const uint8_t playerXDefault = 5;
 const uint8_t playerYDefault = HEIGHT - playerFrameHeight - 1;
@@ -25,14 +26,13 @@ const uint8_t coinY = 30;
 const uint16_t maxScore = 9999;
 
 uint8_t currentJumpFrame = 0;
-uint8_t introFrameCount = arduboy.frameRate * 2;
+uint8_t introFrameCount = FRAME_RATE * 2;
 uint8_t resetFrameCount;
 int16_t hurdles[maxHurdles];
 int16_t coins[maxCoins];
 uint8_t currentCoinFrame = 0;
 uint16_t score = 0;
 uint8_t deadCounter = 0;
-bool muted = false;
 bool gamePaused = false;
 bool deathScreen = false;
 bool hasNewHighScore = false;
@@ -87,11 +87,11 @@ void handleInput() {
     currentJumpFrame = jumpFrame;
   }
 
-  if (buttons.justPressed(LEFT_BUTTON)) {
-    muted = !muted;
+  if (arduboy.justPressed(LEFT_BUTTON)) {
+    arduboy.audio.toggle();
   }
 
-  if (buttons.justPressed(UP_BUTTON)) {
+  if (arduboy.justPressed(UP_BUTTON)) {
     gamePaused = !gamePaused;
   }
 }
@@ -112,7 +112,7 @@ void reset() {
   resetHurdles();
   resetCoins();
 
-  resetFrameCount = arduboy.frameRate;
+  resetFrameCount = FRAME_RATE;
   player.running = false;
 }
 
@@ -148,7 +148,7 @@ void drawScore() {
 }
 
 void drawMute() {
-  arduboy.drawBitmap(95, 0, speakerFrames[muted ? 1 : 0], speakerFrameWidth, speakerFrameHeight, WHITE);
+  arduboy.drawBitmap(95, 0, speakerFrames[arduboy.audio.enabled() ? 0 : 1], speakerFrameWidth, speakerFrameHeight, WHITE);
 }
 
 void drawHurdles() {
@@ -269,9 +269,7 @@ void playerDeath() {
   // 3 frames * updates every 8 = 24
   deadCounter = 24;
 
-  if (!muted) {
-    arduboy.tunes.playScore(deathMusic);
-  }
+  tunes.playScore(deathMusic);
 }
 
 void checkForCollision() {
@@ -307,9 +305,7 @@ void checkForCollision() {
       incScore();
       coins[i] = -coinFrameWidth;
 
-      if (!muted) {
-        arduboy.tunes.tone(300, 50);
-      }
+      tunes.tone(300, 50);
     }
   }
 }
@@ -362,7 +358,7 @@ void drawSlightlyRoundRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
 }
 
 void drawPauseScreen() {
-  arduboy.tunes.stopScore();
+  tunes.stopScore();
 
   drawScore();
   drawMute();
@@ -389,13 +385,13 @@ uint8_t currentInitial;
 uint8_t currentRank;
 
 HighScore editInitialsForRank(HighScore highScore) {
-  if (buttons.justPressed(DOWN_BUTTON)) {
+  if (arduboy.justPressed(DOWN_BUTTON)) {
     highScore.initials[currentInitial] = min(highScore.initials[currentInitial] + 1, 'Z');
-  } else if (buttons.justPressed(UP_BUTTON)) {
+  } else if (arduboy.justPressed(UP_BUTTON)) {
     highScore.initials[currentInitial] = max(highScore.initials[currentInitial] - 1, 'A');
-  } else if (buttons.justPressed(RIGHT_BUTTON)) {
+  } else if (arduboy.justPressed(RIGHT_BUTTON)) {
     currentInitial = min(currentInitial + 1, 2);
-  } else if (buttons.justPressed(LEFT_BUTTON)) {
+  } else if (arduboy.justPressed(LEFT_BUTTON)) {
     currentInitial = max(currentInitial - 1, 0);
   }
   return highScore;
@@ -459,7 +455,7 @@ void setupHighScore() {
     hasNewHighScore = false;
   }
 
-  arduboy.tunes.stopScore();
+  tunes.stopScore();
   reset();
 }
 
@@ -494,7 +490,7 @@ void run() {
       drawCurrentInitialForRank(highScores[currentRank]);
     }
 
-    if (buttons.justPressed(B_BUTTON)) {
+    if (arduboy.justPressed(B_BUTTON)) {
       if (hasNewHighScore) {
         for (int i = 0; i < 3; i++) {
           saveHighScore(i, highScores[i]);
@@ -538,7 +534,7 @@ void run() {
 
 boolean nextFrame() {
   if (arduboy.nextFrame()) {
-    buttons.poll();
+    arduboy.pollButtons();
     return true;
   }
   return false;
@@ -547,7 +543,18 @@ boolean nextFrame() {
 void gameSetup() {
   ensureValidHighScore();
   reset();
-  arduboy.beginNoLogo();
+  arduboy.begin();
+  arduboy.setFrameRate(FRAME_RATE);
+  // audio setup
+  tunes.initChannel(PIN_SPEAKER_1);
+#ifndef AB_DEVKIT
+  // if not a DevKit
+  tunes.initChannel(PIN_SPEAKER_2);
+#else
+  // if it's a DevKit
+  tunes.initChannel(PIN_SPEAKER_1); // use the same pin for both channels
+  tunes.toneMutesScore(true);       // mute the score when a tone is sounding
+#endif
 }
 
 void gameLoop() {
